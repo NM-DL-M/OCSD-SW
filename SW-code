@@ -1,0 +1,501 @@
+#Step 1: Convert DICOM to NIfTI
+import os
+import numpy as np
+import nibabel as nib
+import SimpleITK as sitk
+import tensorflow as tf
+
+def dicom_to_nifti(folder_path, output_file):
+    reader = sitk.ImageSeriesReader()
+    dicom_names = reader.GetGDCMSeriesFileNames(folder_path)
+    reader.SetFileNames(dicom_names)
+    image = reader.Execute()
+
+    # Added a call to PermuteAxes to change the axes of the data
+    image = sitk.PermuteAxes(image, [2, 1, 0])
+
+    sitk.WriteImage(image, output_file)
+
+
+# Example usage
+dicom_to_nifti('...')
+dicom_to_nifti('...')
+
+
+import matplotlib.pyplot as plt
+
+def visualize_images(pet_path, ct_path):
+    pet_img = nib.load(pet_path).get_fdata()
+    ct_img = nib.load(ct_path).get_fdata()
+
+    fig, axes = plt.subplots(1, 2)
+    axes[0].imshow(pet_img[:, :, pet_img.shape[2]//2], cmap='gray')
+    axes[0].set_title('Middle PET Slice')
+    axes[1].imshow(ct_img[:, :, ct_img.shape[2]//2], cmap='gray')
+    axes[1].set_title('Middle CT Slice')
+    plt.show()
+
+# Example usage
+visualize_images('pet.nii.gz', 'ct.nii.gz')
+
+#dicom_to_nifti('...')
+#dicom_to_nifti('...')
+
+#############################################################
+#Step 2: Preprocessing
+from skimage import transform as skTrans
+from scipy import ndimage
+from nibabel import load
+from skimage.util import crop
+
+def preprocess_nifti(input_file, output_file):
+    # Load NIfTI file
+    nifti_img = load(input_file)
+    img_data = nifti_img.get_fdata()
+
+    # Preprocessing
+    img_resized = skTrans.resize(img_data, (144, 144, 170), order=1, preserve_range=True)
+    img_cropped = crop(img_resized, ((9, 7), (2, 14), (18, 24)), copy=False)  # Example cropping
+    img_normalized = normalize(img_cropped)
+    img_resized_final = resize_volume(img_normalized)
+    img_denoised = denoiz(img_resized_final)
+
+    # Convert back to NIfTI
+    new_nifti_img = nib.Nifti1Image(img_denoised, nifti_img.affine)
+    nib.save(new_nifti_img, output_file)
+
+def normalize(volume):
+    min = 3500
+    max = 39000
+    volume[volume < min] = min
+    volume[volume > max] = max
+    volume = (volume - min) / (max - min)
+    return volume
+
+def resize_volume(img):
+    desired_width = 128
+    desired_height = 128
+    desired_depth = 128
+    return skTrans.resize(img, (desired_width, desired_height, desired_depth), order=1, preserve_range=True)
+
+def denoiz(img):
+    return ndimage.gaussian_filter(img, sigma=(1, 1, 0), order=0, mode='nearest')
+
+# Example usage
+preprocess_nifti('pet.nii.gz', 'pet_preprocessed.nii.gz')
+preprocess_nifti('ct.nii.gz', 'ct_preprocessed.nii.gz')
+
+#############################################################
+#Step 3: Classification of PET Images
+import tensorflow as tf
+
+
+def classify_pet_image(model_path, preprocessed_pet_path):
+    # Load the model
+    model = tf.keras.models.load_model(model_path, compile=False)
+
+    # Load the preprocessed PET image
+    pet_img = nib.load(preprocessed_pet_path).get_fdata()
+    pet_img = np.expand_dims(pet_img, axis=0)  # Add batch dimension
+
+    # Prediction
+    prediction = model.predict(pet_img)
+    is_cancerous = np.argmax(prediction, axis=1)[0]
+
+    return is_cancerous
+
+# Example usage
+model_path_1 = '...'
+pet_image_path = 'pet_preprocessed.nii.gz'
+result = classify_pet_image(model_path_1, pet_image_path)
+if result == 0:
+    print("The patient is safe.")
+else:
+    print("The patient has cancer.")
+
+#############################################################
+#Step 4 & 5: Staging of Cancerous PET
+def stage_cancer(model_path, pet_path):
+    # Load the staging model
+    model = tf.keras.models.load_model(model_path)
+
+    # Load the PET image
+    pet_img = nib.load(pet_path).get_fdata()
+    pet_img = np.expand_dims(pet_img, axis=0)  # Add batch dimension
+
+    # Prediction for staging
+    prediction = model.predict(pet_img)
+    stage = np.argmax(prediction, axis=1)[0]
+
+    return stage
+
+# Example usage
+if result == 1:
+    staging_model_path = 'path_to_staging_model.h5'
+    stage = stage_cancer(staging_model_path, pet_image_path)
+    if stage == 0:
+        print("The cancer is at stage 3.")
+    else:
+        print("The cancer is at stage 4.")
+
+#############################################################
+#Step 6: Visualization of PET and CT Images
+import matplotlib.pyplot as plt
+
+def visualize_images(pet_path, ct_path):
+    pet_img = nib.load(pet_path).get_fdata()
+    ct_img = nib.load(ct_path).get_fdata()
+
+    fig, axes = plt.subplots(1, 2)
+    axes[0].imshow(pet_img[:, :, pet_img.shape[2]//2], cmap='gray')
+    axes[0].set_title('Middle PET Slice')
+    axes[1].imshow(ct_img[:, :, ct_img.shape[2]//2], cmap='gray')
+    axes[1].set_title('Middle CT Slice')
+    plt.show()
+
+# Example usage
+if result == 0:
+    visualize_images('pet.nii.gz', 'ct.nii.gz')
+
+#############################################################
+from skimage import transform as skTrans
+from scipy import ndimage
+from nibabel import load
+from skimage.util import crop
+
+def preprocess_nifti_p(input_file, output_file):
+    # Load NIfTI file
+    nifti_img = load(input_file)
+    img_data = nifti_img.get_fdata()
+
+    # Preprocessing
+    img_resized_final = resize_volume_p(img_data)
+    print(np.unique(img_resized_final))
+    img_normalized = normalize_p(img_resized_final)
+    print(np.unique(img_normalized))
+    
+    # Convert back to NIfTI
+    new_nifti_img = nib.Nifti1Image(img_normalized, nifti_img.affine)
+    nib.save(new_nifti_img, output_file)
+
+def normalize_p(volume):
+    min = 3500
+    max = 39000
+    volume[volume < min] = min
+    volume[volume > max] = max
+    volume = (volume - min) / (max - min)
+    return volume
+
+def resize_volume_p(img):
+    desired_width = 128
+    desired_height = 128
+    desired_depth = 128
+    return skTrans.resize(img, (desired_width, desired_height, desired_depth), order=1, preserve_range=True)
+
+# Example usage
+preprocess_nifti_p('pet.nii.gz', 'pet_preprocessed_s.nii.gz')
+
+
+def preprocess_nifti_c(input_file, output_file):
+    # Load NIfTI file
+    nifti_img = load(input_file)
+    img_data = nifti_img.get_fdata()
+
+    # Preprocessing
+    img_resized_final = resize_volume_c(img_data)
+    print(np.unique(img_resized_final))
+    img_normalized = normalize_c(img_resized_final)
+    print(np.unique(img_normalized))
+
+    # Convert back to NIfTI
+    new_nifti_img = nib.Nifti1Image(img_normalized, nifti_img.affine)
+    nib.save(new_nifti_img, output_file)
+
+def normalize_c(volume):
+    min = -300
+    max = 1000
+    volume[volume < min] = min
+    volume[volume > max] = max
+    volume = (volume - min) / (max - min)
+    return volume
+
+def resize_volume_c(img):
+    desired_width = 128
+    desired_height = 128
+    desired_depth = 128
+    return skTrans.resize(img, (desired_width, desired_height, desired_depth), order=1, preserve_range=True)
+
+
+# Example usage
+preprocess_nifti_c('ct.nii.gz', 'ct_preprocessed_s.nii.gz')
+
+
+
+import matplotlib.pyplot as plt
+
+def visualize_images(pet_path, ct_path):
+    pet_img = nib.load(pet_path).get_fdata()
+    ct_img = nib.load(ct_path).get_fdata()
+
+    fig, axes = plt.subplots(1, 2)
+    axes[0].imshow(pet_img[:, :, pet_img.shape[2]//2], cmap='gray')
+    axes[0].set_title('Middle PET Slice')
+    axes[1].imshow(ct_img[:, :, ct_img.shape[2]//2], cmap='gray')
+    axes[1].set_title('Middle CT Slice')
+    plt.show()
+
+# Example usage
+visualize_images('pet_preprocessed_s.nii.gz', 'ct_preprocessed_s.nii.gz')
+
+#############################################################
+#Step 7: Merge PET and CT Images for Segmentation
+def merge_pet_ct_images(pet_path, ct_path):
+    pet_img = nib.load(pet_path).get_fdata()
+    ct_img = nib.load(ct_path).get_fdata()
+
+    # Assuming pet_img and ct_img are already preprocessed to have the same dimensions
+    combined_img = np.stack((pet_img, ct_img), axis=3)
+    print(combined_img.shape)
+    return combined_img
+
+# Example usage
+combined_image = merge_pet_ct_images('pet_preprocessed_s.nii.gz', 'ct_preprocessed_s.nii.gz')
+print(combined_image.shape)
+
+#############################################################
+#Used instead of above combined_image 
+combined_image = np.load('...')
+print(combined_image.shape)
+
+#############################################################
+#Step 8: Segmentation Using a Trained Model
+def segment_image(model_path, combined_image):
+    # Load the segmentation model
+    model = tf.keras.models.load_model(model_path, compile=False)
+
+    # Expand dimensions for batch processing
+    combined_image = np.expand_dims(combined_image, axis=0)
+
+    # Get segmentation results
+    segmentation_result = model.predict(combined_image)[0]
+    return segmentation_result
+
+# Example usage
+segmentation_model_path = '...'
+segmentation_result = segment_image(segmentation_model_path, combined_image)
+print(segmentation_result.shape)
+
+#############################################################
+#Step 9: Generate a Diagnostic Report from Segmentation Results
+from scipy.ndimage import binary_dilation
+
+def generate_report(segmentation_result):
+    mask = np.argmax(segmentation_result, axis=-1).astype(np.uint8)
+    #mask = np.squeeze(mask, axis=0)
+    print(np.unique(mask))
+    print(mask.shape)
+
+    # Create a binary mask for tumor voxels (class 6) and dilate it
+    tumor_mask = (mask == 6)
+    dilated_tumor_mask = binary_dilation(tumor_mask, structure=np.ones((3,3,3)))
+
+    # Define body part names for classes 1 through 5
+    class_to_body_part = {
+        1: "the Thorax",
+        2: "the Head and Neck",
+        3: "the Abdomen",
+        4: "the Musculoskeletal System",
+        5: "the Pelvis"
+    }
+
+    # Initialize a list to store sentences
+    report_sentences = []
+
+    # Iterate through each body part class to check for adjacent tumor voxels
+    for tissue_class in range(1, 6):  # Exclude class 0
+        # Calculate the number of adjacent tumor voxels for the current class
+        num_adjacent_voxels = np.sum((mask == tissue_class) & dilated_tumor_mask)
+        
+        # Generate report sentence if there are adjacent tumor voxels
+        if num_adjacent_voxels > 0:
+            body_part = class_to_body_part[tissue_class]
+            if num_adjacent_voxels == 1:
+                sentence = f"There is a tumor in {body_part}."
+            else:
+                sentence = f"There are tumors in {body_part}."
+            report_sentences.append(sentence)
+
+    # Print the report sentences
+    for sentence in report_sentences:
+        print(sentence)
+
+
+# Example usage
+generate_report(segmentation_result)
+#segmentation_result = np.squeeze(segmentation_result, axis=0)
+
+#############################################################
+# Specify the folder path where the npy file is located
+folder_path = '...'
+
+# Specify the file name of the npy file
+file_name = 'image_1'  # Replace 'example.npy' with your file name
+
+# Load the npy file
+full_path = os.path.join(folder_path, file_name)
+
+#data = np.load(full_path)
+data = segmentation_result
+#data = nib.load(full_path).get_fdata()
+print (data.shape)
+
+
+
+# Separate the channels
+channel1 = data[:, :, :, 0]
+channel2 = data[:, :, :, 1]
+channel3 = data[:, :, :, 2]
+channel4 = data[:, :, :, 3]
+channel5 = data[:, :, :, 4]
+channel6 = data[:, :, :, 5]
+channel7 = data[:, :, :, 6]
+
+# Modify the file names
+channel1_file_name = '1-' + file_name[:-4] + '.nii.gz'
+channel2_file_name = '2-' + file_name[:-4] + '.nii.gz'
+channel3_file_name = '3-' + file_name[:-4] + '.nii.gz'
+channel4_file_name = '4-' + file_name[:-4] + '.nii.gz'
+channel5_file_name = '5-' + file_name[:-4] + '.nii.gz'
+channel6_file_name = '6-' + file_name[:-4] + '.nii.gz'
+channel7_file_name = '7-' + file_name[:-4] + '.nii.gz'
+
+# Create NIfTI objects from the channel data
+channel1_nifti = nib.Nifti1Image(channel1, affine=np.eye(4))
+channel2_nifti = nib.Nifti1Image(channel2, affine=np.eye(4))
+channel3_nifti = nib.Nifti1Image(channel3, affine=np.eye(4))
+channel4_nifti = nib.Nifti1Image(channel4, affine=np.eye(4))
+channel5_nifti = nib.Nifti1Image(channel5, affine=np.eye(4))
+channel6_nifti = nib.Nifti1Image(channel6, affine=np.eye(4))
+channel7_nifti = nib.Nifti1Image(channel7, affine=np.eye(4))
+
+# Save the channels as NIfTI files
+nib.save(channel1_nifti, os.path.join(folder_path, channel1_file_name))
+nib.save(channel2_nifti, os.path.join(folder_path, channel2_file_name))
+nib.save(channel3_nifti, os.path.join(folder_path, channel3_file_name))
+nib.save(channel4_nifti, os.path.join(folder_path, channel4_file_name))
+nib.save(channel5_nifti, os.path.join(folder_path, channel5_file_name))
+nib.save(channel6_nifti, os.path.join(folder_path, channel6_file_name))
+nib.save(channel7_nifti, os.path.join(folder_path, channel7_file_name))
+
+nib.save(nib.Nifti1Image(segmentation_result.astype(np.float32), np.eye(4)), '...') 
+
+#############################################################
+#Step 10: Resize and Superimpose Mask on CT Images
+import numpy as np
+import nibabel as nib
+from scipy.ndimage import zoom
+
+def resize_mask_to_match_ct(ct_image, mask):
+    # Ensure mask has four dimensions (if it only has three, assume it needs an extra dimension for channels)
+    if mask.ndim == 3:
+        mask = np.expand_dims(mask, axis=-1)
+
+    # Get CT and mask dimensions
+    ct_slices, ct_height, ct_width, _ = ct_image.shape
+    mask_slices, mask_height, mask_width, mask_channels = mask.shape
+
+    # Calculate zoom factors for slices, height, and width
+    zoom_factor_slices = ct_slices / mask_slices
+    zoom_factor_height = ct_height / mask_height
+    zoom_factor_width = ct_width / mask_width
+
+    # Initialize resized mask with correct dimensions
+    resized_mask = np.zeros((ct_slices, ct_height, ct_width, mask_channels), dtype=mask.dtype)
+
+    # Iterate through each channel to resize
+    for channel_idx in range(mask_channels):
+        mask_channel = mask[..., channel_idx]
+        # Resize each channel individually
+        resized_mask[..., channel_idx] = zoom(mask_channel, (zoom_factor_slices, zoom_factor_height, zoom_factor_width), order=0)
+
+    return resized_mask
+
+def superimpose_ct_and_mask(ct_image, mask):
+    # Ensure mask has four dimensions
+    if mask.ndim == 3:
+        mask = np.expand_dims(mask, axis=-1)
+        
+    # Extract the CT channel and the tumor mask
+    ct_channel = ct_image[..., 0]  # Adjusted to the correct channel index for CT
+    tumor_mask = mask[..., 6]  # Adjusted to the correct mask channel if there's only one
+
+    # Normalize the CT image and tumor mask for display
+    ct_norm = (ct_channel - ct_channel.min()) / (ct_channel.max() - ct_channel.min())
+    mask_norm = (tumor_mask - tumor_mask.min()) / (tumor_mask.max() - tumor_mask.min())
+
+    # Create an RGB image from the CT channel
+    rgb_image = np.zeros(ct_channel.shape + (3,), dtype=np.float32)
+    rgb_image[..., 0] = ct_norm  # R
+    rgb_image[..., 1] = ct_norm  # G
+    rgb_image[..., 2] = ct_norm  # B
+
+    # Add the tumor mask in the blue channel
+    rgb_image[..., 2] += 0.5 * mask_norm  # Adding a faint blue tint
+
+    # Clip values to stay within the valid range
+    rgb_image = np.clip(rgb_image, 0, 1)
+    
+    return rgb_image
+
+# Example usage
+ct_image = nib.load('ct.nii.gz').get_fdata()
+ct_image = np.expand_dims(ct_image, axis=-1) # Make sure CT image has a channel dimension
+
+print(ct_image.shape)
+print(segmentation_result.shape)
+
+resized_mask = resize_mask_to_match_ct(ct_image, segmentation_result)  # Ensure segmentation_result has the correct format
+superimposed_image = superimpose_ct_and_mask(ct_image, resized_mask)
+
+print (ct_image.shape)
+print (resized_mask.shape)
+print (superimposed_image.shape)
+
+#############################################################
+#Step 11: Interactive Display of Superimposed CT and Mask Images
+
+'''
+%matplotlib qt
+%matplotlib tk
+'''
+
+import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
+
+
+def interactive_display(superimposed_image):
+    # Plotting
+    fig, ax = plt.subplots()
+    plt.subplots_adjust(left=0.25, bottom=0.25)
+
+    # Display the first slice
+    slice_idx = 255
+    im = ax.imshow(superimposed_image[:, slice_idx, :], cmap='gray')
+
+    # Slider for scrolling through slices
+    axcolor = 'lightgoldenrodyellow'
+    ax_slice = plt.axes([0.25, 0.1, 0.65, 0.03], facecolor=axcolor)
+
+    slice_slider = Slider(ax_slice, 'Slice', 0, superimposed_image.shape[2] - 1, valinit=slice_idx, valfmt='%0.0f')
+
+    def update(val):
+        slice_idx = slice_slider.val
+        im.set_data(superimposed_image[:, :, int(slice_idx)])
+        fig.canvas.draw_idle()
+
+    slice_slider.on_changed(update)
+
+    plt.show()
+
+# Example usage
+interactive_display(superimposed_image)
